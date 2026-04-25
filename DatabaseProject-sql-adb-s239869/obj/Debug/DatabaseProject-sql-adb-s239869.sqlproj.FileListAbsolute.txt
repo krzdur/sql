@@ -1,0 +1,5 @@
+/Users/krzysztof/DataGripProjects/sql-w-analizie-danych/DatabaseProject-sql-adb-s239869/bin/Debug/DatabaseProject-sql-adb-s239869.dacpac
+/Users/krzysztof/DataGripProjects/sql-w-analizie-danych/DatabaseProject-sql-adb-s239869/obj/Debug/Model.xml
+/Users/krzysztof/DataGripProjects/sql-w-analizie-danych/DatabaseProject-sql-adb-s239869/obj/Debug/refactor.xml
+/Users/krzysztof/DataGripProjects/sql-w-analizie-danych/DatabaseProject-sql-adb-s239869/obj/Debug/postdeploy.sql
+/Users/krzysztof/DataGripProjects/sql-w-analizie-danych/DatabaseProject-sql-adb-s239869/obj/Debug/predeploy.sql
