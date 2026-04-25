@@ -7,7 +7,7 @@ RETURN (
         CustomerID,
         FirstName,
         LastName
-    FROM [SalesLT].[Customer]
+    FROM [239869].[Customer]
     WHERE [CustomerID] = @CustomerID
 );
 
