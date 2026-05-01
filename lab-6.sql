@@ -155,3 +155,129 @@ Tabela [239869].CustomerAddress jest modyfikowana przez truncate table. To opera
 która zakłada blokadę Schema Modification. NIE MA sposobu odczytania tabeli w trakcie operacji truncate w
 niezakończonej transakcji.
 */
+
+-- =============================================
+-- Zadanie 4
+-- =============================================
+begin try
+    select cast(ProductNumber as int)
+    from SalesLT.Product
+end try
+begin catch
+    select error_message()
+end catch;
+
+go
+-- =============================================
+-- Zadanie 5
+-- =============================================
+
+/*
+Scenariusz: złożenie nowego zamówienia przez klienta
+
+Operacje:
+1. Walidacja danych wejściowych (@Quantity > 0, klient istnieje, produkt istnieje)
+2. Pobranie aktualnej ceny jednostkowej produktu
+3. Wstawienie zamówienia do SalesLT.SalesOrderHeader
+4. Wstawienie pozycji zamówienia do SalesLT.SalesOrderDetail z pobraną ceną
+5. Aktualizacja sumy w zamówieniu na podstawie ilości i ceny
+
+Możliwe błędy:
+- Quantity <= 0: nieprawidłowe dane wejściowe (własny throw)
+- Klient nie istnieje: brak rekordu w SalesLT.Customer (własny throw)
+- Produkt nie istnieje: UnitPrice pozostaje NULL po SELECT (własny throw)
+- Cena produktu = 0: produkt wycofany ze sprzedaży (własny throw)
+- Naruszenie FK lub CHECK: przechwycone przez blok CATCH
+- dowolny inny błąd SQL: przechwycone przez blok CATCH
+*/
+
+-- deklaracja zmiennych, wartości domyślne przypisane dla testów
+declare @CustomerID int = 1;
+declare @ProductID int = 680;
+declare @Quantity smallint = 1;
+declare @Discount money = 0.00;
+declare @UnitPrice money;
+declare @NewOrderID int;
+
+begin try
+
+    if @Quantity <= 0
+        throw 50001, N'Ilość musi być większa od zera.', 1;
+
+    if not exists (select 1 from [239869].Customer where CustomerID = @CustomerID)
+        throw 50002, 'Klient o podanym CustomerID nie istnieje.', 1;
+
+    select @UnitPrice = ListPrice
+    from SalesLT.Product
+    where ProductID = @ProductID;
+
+    if @UnitPrice is null
+        throw 50003, 'Produkt o podanym ProductID nie istnieje.', 1;
+
+    if @UnitPrice = 0
+        throw 50004, N'Produkt ma cenę 0 i jest wycofany ze sprzedaży.', 1;
+
+    begin tran;
+
+        declare @Inserted table (SalesOrderID int);
+
+        insert into SalesLT.SalesOrderHeader (
+            OrderDate, DueDate, Status, OnlineOrderFlag, CustomerID, ShipMethod, SubTotal, TaxAmt, Freight,
+            rowguid, ModifiedDate
+        )
+        -- przechwycenie przydzielonego SalesOrderID
+        output inserted.SalesOrderID into @Inserted
+        values (
+            getdate(), dateadd(day, 13, getdate()), 1, 1,
+            @CustomerID, 'CARGO TRANSPORT 5',
+            0, 0, 0,
+            newid(), getdate()
+        );
+
+        set @NewOrderID = (select SalesOrderID from @Inserted);
+
+        insert into SalesLT.SalesOrderDetail (
+            SalesOrderID, OrderQty, ProductID, UnitPrice, UnitPriceDiscount, rowguid, ModifiedDate
+        )
+        values (
+            @NewOrderID, @Quantity, @ProductID,
+            @UnitPrice, @Discount,
+            newid(), getdate()
+        );
+
+        update SalesLT.SalesOrderHeader
+        set SubTotal = @UnitPrice * @Quantity * (1 - @Discount),
+            ModifiedDate = getdate()
+        where SalesOrderID = @NewOrderID;
+
+    rollback;
+
+    select
+        'Zamówienie pomyślnie złożone' as wynik,
+        @NewOrderID as SalesOrderID,
+        @CustomerID as CustomerID,
+        @ProductID as ProductID,
+        @Quantity as Quantity,
+        @UnitPrice as UnitPrice,
+        @UnitPrice * @Quantity * (1 - @Discount) as SubTotal;
+
+end try
+begin catch
+
+    if @@trancount > 0
+        rollback;
+
+    select
+        error_number()    as ErrorNumber,
+        error_severity()  as ErrorSeverity,
+        error_state()     as ErrorState,
+        error_line()      as ErrorLine,
+        error_message()   as ErrorMessage;
+
+end catch;
+-- =============================================
+-- Zadanie 6
+-- =============================================
+/*
+ Dodano begin tran i rollback w wierszach 220 i 253
+ */
