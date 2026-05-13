@@ -133,3 +133,139 @@ go;
 select Student_9.ufn_ProductsJsonByCategory('Helmets');
 
 go;
+-- =============================================
+-- Zadanie 4
+-- =============================================
+create or alter function Student_9.ufn_IsPriceHigherThanCurrent(
+    @ProductData nvarchar(max)
+)
+    returns bit
+as
+begin
+    -- Walidacja poprawności JSONa - early exit, jeśli format nie jest poprawny
+    if isjson(@ProductData) = 0
+        return cast('@ProductData must be a valid JSON' as int) -- sposób ze stackoverflow na zwrócenie błędu w funkcji
+    if json_path_exists(@ProductData, '$.ProductID') = 0
+        return cast('@ProductData must have ProductID key' as int)
+    if json_path_exists(@ProductData, '$.ListPrice') = 0
+        return cast('@ProductData must have ListPrice key' as int)
+
+    declare @ProductID int = json_value(@ProductData, '$.ProductID');
+    declare @JsonPrice money = json_value(@ProductData, '$.ListPrice');
+    declare @CurrentPrice money;
+
+    select @CurrentPrice = ListPrice
+    from SalesLT.Product
+    where ProductID = @ProductID;
+
+    return iif(@JsonPrice > @CurrentPrice, 1, 0);
+end;
+
+go;
+/*
+ Poniżej test z poprawnym JSON-em. Zachowanie systemu przy cenie równej zależy od operatora w warunku:
+    @JsonPrice > @CurrentPrice
+ W tym przypadku równa cena zwróci 0 (false). Zmiana operatora na >= wywołałaby 1 przy równej cenie.
+ */
+select Student_9.ufn_IsPriceHigherThanCurrent('{"ProductID": 680, "ListPrice": 1436.6}')
+
+-- test walidacji: brak ceny
+-- select Student_9.ufn_IsPriceHigherThanCurrent('{"ProductID": 680, "NotListPrice": 1436.6}')
+
+-- test walidacji: brak ID
+-- select Student_9.ufn_IsPriceHigherThanCurrent('{"NotProductID": 680, "NotListPrice": 1436.6}')
+
+go;
+
+-- =============================================
+-- Zadanie 5
+-- =============================================
+/*
+ Funkcja przyjmująca listę produktów wraz z proponowaną ceną w formacie JSON i dla każdego produktu
+ wywołuje ufn_IsPriceHigherThanCurrent.
+ */
+create function Student_9.ufn_BulkIsPriceHigher(
+    @ProductsData nvarchar(max)
+)
+returns table
+as
+return
+    (select d.ProductID,
+            d.ListPrice as JsonPrice,
+            p.ListPrice as CurrentPrice,
+            Student_9.ufn_IsPriceHigherThanCurrent(
+                '{"ProductID":' + cast(d.ProductID as nvarchar) +
+                ',"ListPrice":' + cast(d.ListPrice as nvarchar) + '}'
+            ) as IsHigher
+    from openjson(@ProductsData)
+    with (
+        ProductID int '$.ProductID',
+        ListPrice money '$.ListPrice'
+    ) d
+    join SalesLT.Product p on p.ProductID = d.ProductID);
+
+go;
+
+select *
+from Student_9.ufn_BulkIsPriceHigher(
+        '[' ||
+                  '{"ProductID": 680, "ListPrice": 1436.6},' ||
+                  '{"ProductID": 706, "ListPrice": 1435},' ||
+                  '{"ProductID": 707, "ListPrice": 35}' ||
+                  ']'
+     );
+
+go;
+
+-- =============================================
+-- Zadanie 6
+-- =============================================
+
+-- TODO
+
+-- =============================================
+-- Zadanie 7
+-- =============================================
+create function dbo.fn_GetCustomerCreditRisk(
+    @CustomerID int
+)
+returns nvarchar(6)
+as
+    begin
+        declare @Orders table
+            (
+                SalesOrderID int,
+                TotalDue money,
+                DueDate datetime,
+                ShipDate datetime,
+                Is3DaysLate int
+            )
+
+        insert into @Orders
+        select
+            SalesOrderID,
+            TotalDue,
+            DueDate,
+            ShipDate,
+            iif(datediff(day, DueDate, ShipDate) > 3, 1, 0) as Is3DaysLate
+        from SalesLT.SalesOrderHeader
+        where CustomerID = @CustomerID
+
+        declare @TotalOrderValue money = (select sum(TotalDue) from @Orders)
+        declare @DelayedOrdersCnt int = (select sum(Is3DaysLate) from @Orders)
+
+        if @TotalOrderValue > 100000 and @DelayedOrdersCnt >= 2
+            return 'HIGH'
+        if @TotalOrderValue > 50000
+            return 'MEDIUM'
+        return 'LOW'
+
+    end;
+
+go;
+
+-- Brak zamówień z 3-dniowym opóźnieniem = brak klientów HIGH
+select dbo.fn_GetCustomerCreditRisk(30089); -- LOW
+select dbo.fn_GetCustomerCreditRisk(29736); -- MEDIUM
+
+go;
