@@ -220,8 +220,154 @@ go;
 -- =============================================
 -- Zadanie 6
 -- =============================================
+/*
+ ------------------- !!!!!!!!!! ------------------------
+ Konieczne uruchomienie skryptu tworzącego tabele i dane: `lab-9-setup.sql`
+ ------------------- !!!!!!!!!! ------------------------
 
--- TODO
+ Scenariusz biznesowy: System zarządzania flotą rowerów miejskich. Miasto prowadzi sieć stacji dokujących z rowerami
+ na minuty. System śledzi przejazdy, awarie i dostępność rowerów.
+ */
+
+-- funkcja skalarna: ufn_RideCost
+-- Oblicza koszt przejazdu. Pierwsze 20 minut = 0 zł w abonamencie, potem 0,10 zł/min.
+-- Uzasadnienie: prosta kalkulacja zwracająca jedną wartość, więc to idealny przypadek dla funkcji skalarnej.
+
+create or alter function CityBikes.ufn_RideCost(
+    @StartTime datetime,
+    @EndTime datetime
+)
+    returns money
+as
+begin
+    declare @Minutes int = datediff(minute, @StartTime, @EndTime);
+    declare @Cost money = 0;
+
+    if @Minutes > 20
+        set @Cost = (@Minutes - 20) * 0.10;
+
+    return @Cost;
+end;
+
+go;
+
+-- test
+select CityBikes.ufn_RideCost('2025-05-01 08:00', '2025-05-01 08:15') as [0_zl],
+       CityBikes.ufn_RideCost('2025-05-01 08:00', '2025-05-01 08:35') as [1.50_zl],
+       CityBikes.ufn_RideCost('2025-05-01 08:00', '2025-05-01 08:50') as [3.00_zl];
+
+go;
+
+-- widok: v_StationOccupancy
+-- Bieżące obłożenie stacji: pojemność, ile rowerów stoi (ostatni EndStation bez późniejszego wyjazdu), % zapełnienia.
+-- Uzasadnienie: często odpytywane zestawienie bez parametrów, przydatny do bieżących analiz.
+
+create or alter view CityBikes.v_StationOccupancy
+as
+with LastPosition as (
+    -- dla każdego roweru znajdujemy stację, na której zakończył ostatni przejazd
+    select r.BikeID,
+           r.EndStationID
+    from CityBikes.Rides r
+    where r.EndTime = (select max(r2.EndTime)
+                       from CityBikes.Rides r2
+                       where r2.BikeID = r.BikeID))
+select s.StationID,
+       s.Name,
+       s.District,
+       s.Capacity,
+       count(distinct lp.BikeID)                                            as BikesParked,
+       cast(count(distinct lp.BikeID) as float) / cast(s.Capacity as float) as OccupancyRate
+from CityBikes.BikeStations s
+         left join LastPosition lp on lp.EndStationID = s.StationID
+group by s.StationID, s.Name, s.District, s.Capacity;
+
+go;
+
+-- test
+select *
+from CityBikes.v_StationOccupancy;
+
+go;
+
+-- iTVF: ufn_BikeHistory
+-- Dla podanego roweru zwraca historię przejazdów z nazwami stacji, czasem i kosztem (używając poprzednio stworzonej
+-- funkcji.
+-- Uzasadnienie: zapytanie z parametrem; wystarczy jeden return select, żeby zwrócić odpowiednie dane.
+
+create or alter function CityBikes.ufn_BikeHistory(
+    @BikeID int
+)
+    returns table
+        as
+        return
+        select r.RideID,
+               ss.Name                                        as StartStation,
+               es.Name                                        as EndStation,
+               r.StartTime,
+               r.EndTime,
+               datediff(minute, r.StartTime, r.EndTime)       as DurationMin,
+               r.DistanceKm,
+               CityBikes.ufn_RideCost(r.StartTime, r.EndTime) as Cost
+        from CityBikes.Rides r
+                 join CityBikes.BikeStations ss on ss.StationID = r.StartStationID
+                 join CityBikes.BikeStations es on es.StationID = r.EndStationID
+        where r.BikeID = @BikeID;
+
+go;
+
+-- test
+select *
+from CityBikes.ufn_BikeHistory(1);
+
+go;
+
+-- mTVF: ufn_MaintenanceSummary
+-- Dla podanego zakresu dat zwraca zestawienie rowerów z liczbą awarii, średnim czasem naprawy i rekomendacją po serwisie.
+-- Uzasadnienie: wymaga agregacji + logiki warunkowej (kategoryzacja) — uzasadnia multi-statement TVF.
+
+create or alter function CityBikes.ufn_MaintenanceSummary(
+    @DateFrom datetime,
+    @DateTo datetime
+)
+    returns @Report table
+                    (
+                        BikeID        int,
+                        Model         nvarchar(50),
+                        IssueCount    int,
+                        AvgRepairDays decimal(5, 1),
+                        Priority      nvarchar(15)
+                    )
+as
+begin
+    insert into @Report (BikeID, Model, IssueCount, AvgRepairDays)
+    select b.BikeID,
+           b.Model,
+           count(*)                                                                             as IssueCount,
+           isnull(avg(cast(datediff(day, m.ReportedDate, m.ResolvedDate) as decimal(5, 1))), 0) as AvgRepairDays
+    from CityBikes.MaintenanceLogs m
+             join CityBikes.Bikes b on b.BikeID = m.BikeID
+    where m.ReportedDate >= @DateFrom
+      and m.ReportedDate <= @DateTo
+    group by b.BikeID, b.Model;
+
+    update @Report
+    set Priority = case
+                       when IssueCount >= 3 then 'do wyrzucenia'
+                       when IssueCount = 2 then N'potrzebny przegląd'
+                       else 'ok'
+        end;
+
+    return;
+end;
+
+go;
+
+-- test
+select *
+from CityBikes.ufn_MaintenanceSummary('2026-03-01', '2026-06-30');
+
+go;
 
 -- =============================================
 -- Zadanie 7
