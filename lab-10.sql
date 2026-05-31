@@ -222,3 +222,133 @@ exec SalesLT.usp_UpdateCustomer
      @FirstName = 'Nie ma';
 
 go;
+
+-- =============================================
+-- Zadanie 6
+-- =============================================
+
+-- utworzenie tabeli ProductInventory
+
+create table SalesLT.ProductInventory
+(
+    ProductID    int      not null primary key references SalesLT.Product (ProductID),
+    Quantity     int      not null default 0,
+    ModifiedDate datetime not null default getdate()
+);
+
+go;
+
+create or alter procedure SalesLT.usp_AddNewProduct @Name nvarchar(50),
+                                                    @ProductCategoryID int,
+                                                    @ListPrice money,
+                                                    @Quantity int
+as
+begin
+    set nocount on;
+
+    -- walidacja danych wejściowych
+    if
+        @ListPrice <= 0
+        throw 50010, N'Cena musi być większa od zera', 1;
+
+    if
+        @Quantity < 0
+        throw 50011, N'Ilość w magazynie nie może być ujemna', 1;
+
+    if
+        not exists (select 1 from SalesLT.ProductCategory where ProductCategoryID = @ProductCategoryID)
+        throw 50012, N'Podana kategoria nie istnieje', 1;
+
+    begin tran;
+
+    begin try
+        declare @ProductID int;
+
+        insert into SalesLT.Product (Name, ProductNumber, StandardCost, ListPrice,
+                                     ProductCategoryID, SellStartDate)
+        values (@Name,
+                'NEW-' + convert(nvarchar(8), crypt_gen_random(16), 2),
+                @ListPrice * 0.5,
+                @ListPrice,
+                @ProductCategoryID,
+                getdate());
+
+        set
+            @ProductID = scope_identity();
+
+        insert into SalesLT.ProductInventory (ProductID, Quantity)
+        values (@ProductID, @Quantity);
+
+        commit tran;
+    end try
+    begin catch
+        rollback tran;
+        throw;
+    end catch
+end;
+
+go;
+
+-- test: dodanie nowego produktu
+exec SalesLT.usp_AddNewProduct
+     @Name = 'Testowy Produkt',
+     @ProductCategoryID = 5,
+     @ListPrice = 99.99,
+     @Quantity = 50;
+
+go;
+
+-- walidacja
+select p.ProductID, p.Name, p.ListPrice, p.ProductCategoryID, i.Quantity
+from SalesLT.Product p
+         join SalesLT.ProductInventory i on p.ProductID = i.ProductID
+where p.Name = 'Testowy Produkt';
+
+go;
+
+-- =============================================
+-- Zadanie 7
+-- =============================================
+
+-- 1. Utworzenie tabeli tymczasowej TopProducts (copy-paste z Lab 9, Zad 2.)
+select top 25 ProductID,
+              ListPrice
+into #TopProducts
+from SalesLT.Product
+order by ListPrice / Weight;  -- najlepsze produkty to te z najniższą ceną za kilogram 🤷🏻‍♂️
+
+go;
+
+-- 2. utworzenie procedury
+create or alter procedure Student_9.usp_CalcAdjustedPrices
+as
+begin
+    set nocount on;
+
+    -- sprawdzenie czy #TopProduct została utworzona
+    if object_id('tempdb..#TopProducts') is null
+        throw 50013, N'Najpierw utwórz #TopProducts', 1;
+
+    select ProductID,
+           ListPrice,
+           ListPrice - (ListPrice * 0.09) as AdjustedPrice
+    from #TopProducts;
+end;
+
+go;
+
+-- 3. Zapisanie wyniku do @Summary
+declare @Summary table
+                 (
+                     ProductID     int,
+                     ListPrice     money,
+                     AdjustedPrice money
+                 )
+
+insert into @Summary
+    exec Student_9.usp_CalcAdjustedPrices;
+
+select * from @Summary;
+
+
+go;
