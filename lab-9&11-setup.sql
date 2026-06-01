@@ -44,6 +44,15 @@ create table CityBikes.MaintenanceLogs
     IssueType    nvarchar(20) not null -- tire / brake / chain
 );
 
+create table CityBikes.StationQuarterlyRides
+(
+    StationName nvarchar(50) not null,
+    Q1          int          not null,
+    Q2          int          not null,
+    Q3          int          not null,
+    Q4          int          not null
+);
+
 go;
 
 
@@ -89,5 +98,13 @@ values (1, 3, '2026-04-10', '2026-04-12', 'tire'),
        (8, 7, '2026-05-03', '2026-05-04', 'tire'),
        (9, 4, '2026-05-02', '2026-05-03', 'chain'),
        (10, 6, '2026-04-15', '2026-04-17', 'tire');
+
+
+insert into CityBikes.StationQuarterlyRides (StationName, Q1, Q2, Q3, Q4)
+values ('Rynek', 120, 340, 410, 95),
+       ('Dworzec PKP', 95, 280, 365, 80),
+       ('Park Jordana', 60, 190, 250, 45),
+       ('Kampus UEK', 80, 220, 310, 70),
+       ('Galeria Bonarka', 40, 130, 175, 30);
 
 go;
