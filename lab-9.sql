@@ -222,7 +222,7 @@ go;
 -- =============================================
 /*
  ------------------- !!!!!!!!!! ------------------------
- Konieczne uruchomienie skryptu tworzącego tabele i dane: `lab-9-setup.sql`
+ Konieczne uruchomienie skryptu tworzącego tabele i dane: `lab-9&11-setup.sql`
  ------------------- !!!!!!!!!! ------------------------
 
  Scenariusz biznesowy: System zarządzania flotą rowerów miejskich. Miasto prowadzi sieć stacji dokujących z rowerami
